@@ -1,20 +1,13 @@
-# Sicho_Radio (RoIP relay)
+# Sicho Radio (PWA test)
 
-Minimal WebSocket relay (rooms by channel) for a RoIP proof-of-concept.
+- Backend: Node.js + ws (WebSocket relay)
+- PWA: disponible sur `/pwa`
 
-## Local run
-```bash
-npm install
-npm start
-```
+## Endpoints
+- `/` : JSON status (conservé pour compat)
+- `/api/status` : JSON status
+- `/health` : healthcheck
+- `/ws` : WebSocket
 
-Endpoints:
-- HTTP: http://localhost:8080/
-- Health: http://localhost:8080/health
-- WS: ws://localhost:8080/ws
-
-## Koyeb
-Create a **Web Service** from this repo using **Buildpack**.
-
-WebSocket endpoint once deployed:
-- wss://<your-app>.koyeb.app/ws
+## Test PWA
+Ouvre `https://<ton-service>/pwa` sur deux téléphones, même canal, puis maintiens le bouton PTT.
