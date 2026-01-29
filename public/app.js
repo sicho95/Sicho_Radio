@@ -1,4 +1,4 @@
-// V6: Hybrid PTT / Full Duplex Lock
+// V7: Strict PTT Gating + Lock 10s
 const BACKEND = "https://mobile-avivah-sicho-96db3843.koyeb.app";
 const WS_URL = BACKEND.replace(/^http/, 'ws') + '/ws';
 
@@ -20,11 +20,10 @@ let captureSource = null;
 let captureStream = null;
 let playbackNode = null;
 
-// Lock Logic Variables
 let holdTimer = null;
 let isLocked = false; 
-let isTransmitting = false;
-const LOCK_DELAY_MS = 10000; // 10 secondes pour verrouiller
+let isTransmitting = false; // "Porte" logicielle
+const LOCK_DELAY_MS = 10000; 
 
 function log(msg) {
   const d = new Date().toLocaleTimeString();
@@ -69,44 +68,52 @@ async function startPlayback() {
 
 async function startCapture() {
   if (ws?.readyState !== WebSocket.OPEN) return;
-  if (isTransmitting) return; // Déjà en cours
+  // Si déjà en train d'émettre, on ne relance pas
+  if (isTransmitting) return;
 
   if (!(await initAudio())) return;
 
   try {
+    // Initialisation unique du flux micro (Hot Mic)
     if (!captureStream) {
       captureStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       });
     }
 
+    // Initialisation unique du processeur
     if (!captureNode) {
         captureSource = audioCtx.createMediaStreamSource(captureStream);
         captureNode = new AudioWorkletNode(audioCtx, 'capture-processor');
 
         captureNode.port.onmessage = (e) => {
-          if (ws && ws.readyState === WebSocket.OPEN) ws.send(e.data);
+          // V7 FIX: GATE LOGIC
+          // On envoie SEULEMENT si isTransmitting est true
+          if (ws && ws.readyState === WebSocket.OPEN && isTransmitting) {
+            ws.send(e.data);
+          }
         };
 
         captureSource.connect(captureNode);
     }
 
-    ws.send(JSON.stringify({ type: 'ptt', state: 'start' }));
+    // Démarrage logique de l'émission
     isTransmitting = true;
+    ws.send(JSON.stringify({ type: 'ptt', state: 'start' }));
 
     pttBtn.classList.add('active');
     pttBtn.textContent = isLocked ? 'VERROUILLÉ (FULL DUPLEX)' : 'TRANSMISSION...';
   } catch (e) {
     log('Mic Error: ' + e.message);
-    stopCapture(true); // Force stop
+    stopCapture(true); 
   }
 }
 
 function stopCapture(force = false) {
-  // Si verrouillé et pas forcé, on ne coupe pas
   if (isLocked && !force) return;
 
-  isTransmitting = false;
+  isTransmitting = false; // LA PORTE SE FERME ICI
+
   pttBtn.classList.remove('active');
   pttBtn.classList.remove('locked');
   pttBtn.textContent = 'PTT';
@@ -115,7 +122,6 @@ function stopCapture(force = false) {
       ws.send(JSON.stringify({ type: 'ptt', state: 'stop' }));
   }
 
-  // Reset lock state
   isLocked = false;
   lockHint.classList.remove('show');
 }
@@ -133,7 +139,7 @@ function connect() {
     pttBtn.disabled = false;
 
     const ch = channelEl.value;
-    ws.send(JSON.stringify({ type: 'join', channel: parseInt(ch), role: 'v6' }));
+    ws.send(JSON.stringify({ type: 'join', channel: parseInt(ch), role: 'v7' }));
 
     await startPlayback();
   };
@@ -167,21 +173,18 @@ connectBtn.addEventListener('click', connect);
 disconnectBtn.addEventListener('click', () => ws && ws.close());
 pttBtn.addEventListener('contextmenu', e => e.preventDefault());
 
-// --- LOGIQUE HYBRIDE PTT / LOCK ---
-
 const handlePress = (e) => {
   if (e.cancelable) e.preventDefault();
 
-  // Si déjà verrouillé, un clic déverrouille et arrête
+  // Si verrouillé, un clic arrête tout
   if (isLocked) {
-    stopCapture(true); // Force unlock & stop
+    stopCapture(true); 
     return;
   }
 
-  // Sinon, démarrage PTT standard
   startCapture();
 
-  // Démarrage timer pour verrouillage
+  // Timer lock
   lockHint.textContent = `Maintiens ${LOCK_DELAY_MS/1000}s pour verrouiller`;
   lockHint.classList.add('show');
 
@@ -190,7 +193,6 @@ const handlePress = (e) => {
     pttBtn.classList.add('locked');
     pttBtn.textContent = 'VERROUILLÉ (Cliquer pour arrêter)';
     lockHint.textContent = 'Mode Full Duplex activé';
-    // Vibration haptique si supportée
     if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
   }, LOCK_DELAY_MS);
 };
@@ -198,27 +200,21 @@ const handlePress = (e) => {
 const handleRelease = (e) => {
   if (e.cancelable) e.preventDefault();
 
-  // Annule le timer de verrouillage si relâché avant 10s
   if (holdTimer) {
     clearTimeout(holdTimer);
     holdTimer = null;
   }
 
-  // Si verrouillé, on ne fait rien (il faut recliquer pour arrêter)
-  if (isLocked) return;
+  if (isLocked) return; // Reste actif si lock
 
-  // Sinon, arrêt PTT standard
-  stopCapture();
+  stopCapture(); // Coupe si pas lock
   lockHint.classList.remove('show');
 };
 
-
-// Touch
 pttBtn.addEventListener('touchstart', handlePress, { passive: false });
 pttBtn.addEventListener('touchend', handleRelease);
 pttBtn.addEventListener('touchcancel', handleRelease);
 
-// Mouse
 pttBtn.addEventListener('mousedown', (e) => {
   if (e.button === 0) handlePress(e);
 });

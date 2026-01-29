@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/icon-192.png">
-  <title>Sicho Radio (V6)</title>
+  <title>Sicho Radio (V7)</title>
   <style>
     body { 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
@@ -93,14 +93,12 @@
       outline: none;
     }
 
-    /* État actif (Touch ou Hold) */
     #ptt.active {
       transform: scale(0.96);
       background: linear-gradient(145deg, #dc2626, #b91c1c);
       box-shadow: inset 0 4px 8px rgba(0,0,0,0.3);
     }
 
-    /* État VERROUILLÉ (Full Duplex) */
     #ptt.locked {
       background: linear-gradient(145deg, #10b981, #059669); /* Vert */
       box-shadow: 0 0 20px rgba(16, 185, 129, 0.5), inset 0 2px 4px rgba(255,255,255,0.3);
@@ -132,7 +130,7 @@
   <div class="container">
     <div class="header">
       <div class="row">
-        <h1>Sicho Radio <span style="color:#ef4444">V6</span></h1>
+        <h1>Sicho Radio <span style="color:#ef4444">V7</span></h1>
         <div class="status-row">
           <span id="statusDot" class="status-dot"></span>
           <span id="statusText">Déconnecté</span>
