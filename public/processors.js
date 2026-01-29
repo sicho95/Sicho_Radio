@@ -1,4 +1,4 @@
-// processors.js (V5 identique V4)
+// processors.js V6 (Identique V5/V4)
 const TARGET_SAMPLE_RATE = 16000;
 
 class CaptureProcessor extends AudioWorkletProcessor {

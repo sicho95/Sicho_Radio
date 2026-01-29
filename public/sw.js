@@ -1,4 +1,4 @@
-const CACHE = 'sicho-radio-v5-touchfix';
+const CACHE = 'sicho-radio-v6-duplexlock';
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', './index.html', './app.js', './processors.js', './manifest.webmanifest', './icons/icon-192.png'])));
   self.skipWaiting();
