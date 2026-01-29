@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#111827" />
-  <link rel="manifest" href="/manifest.webmanifest" />
-  <title>Sicho Radio PWA</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <title>Sicho Radio (PWA)</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 16px; color: #111; }
     .row { display:flex; gap: 12px; align-items:center; flex-wrap: wrap; }
@@ -27,14 +27,17 @@
       <button id="connect">Connect</button>
       <button id="disconnect" disabled>Disconnect</button>
     </div>
+
+    <p>Backend: <code id="backendUrl"></code></p>
     <p>WS: <code id="wsUrl"></code></p>
     <p>État: <strong id="status">disconnected</strong></p>
     <p>Remote PTT: <strong id="remotePtt">idle</strong></p>
+    <p>Backend status: <strong id="backendStatus">unknown</strong></p>
   </div>
 
   <div class="card">
     <button id="ptt" disabled>Maintiens pour parler (PTT)</button>
-    <p style="margin:8px 0 0">Astuce: sur mobile, utilise le mode silencieux si besoin pour éviter l’écho.</p>
+    <p style="margin:8px 0 0">Astuce: sur mobile, active le mode silencieux si besoin pour éviter l’écho.</p>
   </div>
 
   <div class="card">
@@ -42,9 +45,11 @@
     <pre id="log" style="white-space:pre-wrap;margin:0"></pre>
   </div>
 
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="./app.js"></script>
   <script>
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js', { scope: './' });
+    }
   </script>
 </body>
 </html>
