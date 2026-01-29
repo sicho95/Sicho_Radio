@@ -1,168 +1,105 @@
-// GitHub Pages => chemins relatifs + backend externe (Koyeb)
-// V3: AudioWorklet Capture + Playback (Jitter Buffer)
-
+// V4: Fix Sample Rate Resampling
 const BACKEND = "https://mobile-avivah-sicho-96db3843.koyeb.app";
 const WS_URL = BACKEND.replace(/^http/, 'ws') + '/ws';
-const TARGET_SR = 16000;
 
 const el = (id) => document.getElementById(id);
 const logEl = el('log');
-const statusEl = el('status');
+const statusText = el('statusText');
+const statusDot = el('statusDot');
 const remotePttEl = el('remotePtt');
-const techInfoEl = el('techInfo');
-
-const channelEl = el('channel');
+const pttBtn = el('ptt');
 const connectBtn = el('connect');
 const disconnectBtn = el('disconnect');
-const pttBtn = el('ptt');
+const channelEl = el('channel');
 
 let ws = null;
-let audioCtx = null; // Contexte unique partagé (Capture & Playback)
-
-// Nodes AudioWorklet
+let audioCtx = null;
 let captureNode = null;
 let captureSource = null;
 let captureStream = null;
-
 let playbackNode = null;
 
-let sending = false;
-
-function log(...args) {
-  const txt = args.join(' ');
-  logEl.textContent += txt + '\n';
+function log(msg) {
+  const d = new Date().toLocaleTimeString();
+  logEl.innerHTML += `<div><span style="color:#9ca3af">[${d}]</span> ${msg}</div>`;
   logEl.scrollTop = logEl.scrollHeight;
-  console.log('[App]', txt);
+  console.log(msg);
 }
 
 function setStatus(s) {
-  statusEl.textContent = s;
-  if (s === 'connected') statusEl.style.color = 'green';
-  else if (s === 'disconnected') statusEl.style.color = 'red';
-  else statusEl.style.color = 'orange';
+  if (s === 'connected') {
+    statusDot.className = 'status-dot connected';
+    statusText.textContent = 'En ligne';
+  } else {
+    statusDot.className = 'status-dot disconnected';
+    statusText.textContent = s === 'connecting' ? 'Connexion...' : 'Déconnecté';
+  }
 }
 
-function wsSendJson(obj) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify(obj));
-}
-
-async function ensureAudioContext() {
+async function initAudio() {
   if (!audioCtx) {
-    // Création du contexte
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)({
-      latencyHint: 'interactive',
-      sampleRate: 48000 // Force standard si possible, sinon le navigateur décide
-    });
-
-    // Chargement du module processeur (Unique fichier pour les 2 processors)
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
     try {
       await audioCtx.audioWorklet.addModule('./processors.js');
-      techInfoEl.textContent = `CTX: ${audioCtx.sampleRate}Hz | Target: ${TARGET_SR}Hz`;
-      log('AudioWorklet module loaded.');
+      log('Audio Engine Ready (' + audioCtx.sampleRate + 'Hz)');
     } catch (e) {
-      log('ERREUR: Impossible de charger processors.js', e);
-      techInfoEl.textContent = 'Erreur Worklet';
+      log('Audio Init Fail: ' + e.message);
+      return false;
     }
   }
-
-  if (audioCtx.state !== 'running') {
-    await audioCtx.resume();
-  }
-  return audioCtx;
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  return true;
 }
 
-// ----------------------------------------------------------------------
-// PLAYBACK (Réception)
-// ----------------------------------------------------------------------
-async function startPlaybackEngine() {
-  const ctx = await ensureAudioContext();
-
-  // Si déjà actif, rien à faire
+async function startPlayback() {
+  if (!(await initAudio())) return;
   if (playbackNode) return;
 
   try {
-    playbackNode = new AudioWorkletNode(ctx, 'playback-processor');
-    playbackNode.connect(ctx.destination);
-    log('Playback engine started (Jitter Buffer ready)');
-  } catch (e) {
-    log('Playback engine init fail:', e);
-  }
+    playbackNode = new AudioWorkletNode(audioCtx, 'playback-processor');
+    playbackNode.connect(audioCtx.destination);
+  } catch(e) { log('Playback Error: ' + e); }
 }
 
-// ----------------------------------------------------------------------
-// CAPTURE (Émission)
-// ----------------------------------------------------------------------
 async function startCapture() {
-  if (sending) return;
-
-  const ctx = await ensureAudioContext();
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!(await initAudio())) return;
 
   try {
-    // Micro
-    if (!captureStream) {
-      captureStream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        } 
-      });
-    }
+    captureStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+    });
 
-    captureSource = ctx.createMediaStreamSource(captureStream);
+    captureSource = audioCtx.createMediaStreamSource(captureStream);
+    captureNode = new AudioWorkletNode(audioCtx, 'capture-processor');
 
-    // Worklet Capture
-    captureNode = new AudioWorkletNode(ctx, 'capture-processor');
-
-    // Événement: Worklet envoie des données PCM au Main Thread
     captureNode.port.onmessage = (e) => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(e.data); // ArrayBuffer Int16
-      }
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(e.data);
     };
 
     captureSource.connect(captureNode);
-    // Note: On ne connecte PAS à destination pour éviter retour voix local
+    // Pas de connexion destination pour éviter retour
 
-    sending = true;
-    pttBtn.style.background = '#16a34a'; // Vert
-    pttBtn.textContent = 'EN ÉMISSION...';
-
+    pttBtn.classList.add('active');
+    pttBtn.textContent = 'TRANSMISSION...';
   } catch (e) {
-    log('Capture start error:', e);
+    log('Mic Error: ' + e.message);
     stopCapture();
   }
 }
 
 function stopCapture() {
-  sending = false;
-  pttBtn.style.background = ''; // Reset
-  pttBtn.textContent = 'MAINTENIR POUR PARLER';
+  pttBtn.classList.remove('active');
+  pttBtn.textContent = 'PTT';
 
-  if (captureNode) {
-    captureNode.disconnect();
-    captureNode = null;
-  }
-  if (captureSource) {
-    captureSource.disconnect();
-    captureSource = null;
-  }
-  // On garde le stream ouvert pour réactivité, ou on le coupe si on veut
-  // captureStream.getTracks().forEach(t => t.stop()); captureStream = null; 
+  if (captureNode) { captureNode.disconnect(); captureNode = null; }
+  if (captureSource) { captureSource.disconnect(); captureSource = null; }
+  if (captureStream) { captureStream.getTracks().forEach(t => t.stop()); captureStream = null; }
 }
 
-
-// ----------------------------------------------------------------------
-// WEBSOCKET
-// ----------------------------------------------------------------------
 function connect() {
   if (ws) return;
-
   ws = new WebSocket(WS_URL);
   ws.binaryType = 'arraybuffer';
-
   setStatus('connecting');
   connectBtn.disabled = true;
 
@@ -171,34 +108,22 @@ function connect() {
     disconnectBtn.disabled = false;
     pttBtn.disabled = false;
 
-    const channel = Math.max(1, Math.min(255, parseInt(channelEl.value, 10) || 1));
-    wsSendJson({ type: 'join', channel, role: 'pwa_v3' });
-    log('Connected to Channel', channel);
+    const ch = channelEl.value;
+    ws.send(JSON.stringify({ type: 'join', channel: parseInt(ch), role: 'v4' }));
 
-    // Démarrer moteur playback (écoute) immédiatement
-    await startPlaybackEngine();
+    await startPlayback();
   };
 
-  ws.onmessage = (evt) => {
-    // 1. TEXTE (Signalo)
-    if (typeof evt.data === 'string') {
+  ws.onmessage = (e) => {
+    if (typeof e.data === 'string') {
       try {
-        const msg = JSON.parse(evt.data);
-        if (msg.type === 'ptt') {
-          remotePttEl.textContent = msg.state === 'start' ? 'EN LIGNE...' : 'silence';
-          if (msg.state === 'start') {
-             // Optionnel: Reset jitter buffer si nouvelle phrase ?
-             // Non, le processor gère ça (auto-start quand buffer rempli)
-          }
+        const m = JSON.parse(e.data);
+        if (m.type === 'ptt') {
+          remotePttEl.textContent = m.state === 'start' ? 'Quelqu\'un parle...' : '';
         }
       } catch {}
-      return;
-    }
-
-    // 2. BINAIRE (Audio reçu)
-    // On envoie direct au Playback Worklet
-    if (playbackNode) {
-      playbackNode.port.postMessage(evt.data);
+    } else {
+      if (playbackNode) playbackNode.port.postMessage(e.data);
     }
   };
 
@@ -208,47 +133,22 @@ function connect() {
     disconnectBtn.disabled = true;
     pttBtn.disabled = true;
     ws = null;
-
-    // Cleanup nodes
     if (playbackNode) { playbackNode.disconnect(); playbackNode = null; }
     stopCapture();
   };
-
-  ws.onerror = () => {
-    log('WS Error');
-  };
 }
 
-function disconnect() {
-  if (ws) ws.close();
-}
+connectBtn.onclick = connect;
+disconnectBtn.onclick = () => ws && ws.close();
 
-// ----------------------------------------------------------------------
-// UI EVENTS
-// ----------------------------------------------------------------------
-connectBtn.addEventListener('click', connect);
-disconnectBtn.addEventListener('click', disconnect);
+// Gestions Touch/Mouse PTT robustes
+const start = (e) => { e.preventDefault(); startCapture(); };
+const stop = (e) => { e.preventDefault(); stopCapture(); };
 
-// PTT Logic
-const startTx = (e) => {
-  if (e.cancelable) e.preventDefault();
-  startCapture();
-};
+pttBtn.onmousedown = start;
+pttBtn.onmouseup = stop;
+pttBtn.onmouseleave = stop;
 
-const stopTx = (e) => {
-  if (e.cancelable) e.preventDefault();
-  stopCapture();
-};
-
-// Souris
-pttBtn.addEventListener('mousedown', startTx);
-pttBtn.addEventListener('mouseup', stopTx);
-pttBtn.addEventListener('mouseleave', stopTx);
-
-// Touch (Mobile) - Crucial: passive: false
-pttBtn.addEventListener('touchstart', startTx, { passive: false });
-pttBtn.addEventListener('touchend', stopTx, { passive: false });
-pttBtn.addEventListener('touchcancel', stopTx, { passive: false });
-
-// Anti-sélection barbare
-document.addEventListener('contextmenu', event => event.preventDefault());
+pttBtn.ontouchstart = start;
+pttBtn.ontouchend = stop;
+pttBtn.ontouchcancel = stop;

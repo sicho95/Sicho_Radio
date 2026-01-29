@@ -3,84 +3,102 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <meta name="theme-color" content="#111827" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/icon-192.png">
-  <title>Sicho Radio (PWA)</title>
+  <title>Sicho Radio (V4)</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 16px; color: #111; background-color: #f9fafb; }
-    .row { display:flex; gap: 12px; align-items:center; flex-wrap: wrap; }
-    input, button { font-size: 16px; padding: 12px 14px; }
-    button { border: 0; border-radius: 10px; background: #111827; color: white; cursor: pointer; font-weight: 600; }
-    button:active { transform: scale(0.98); }
-    button[disabled] { background: #9ca3af; cursor: not-allowed; transform: none; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: #f3f4f6; color: #1f2937; -webkit-tap-highlight-color: transparent; }
+    .container { max-width: 480px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; height: 100vh; box-sizing: border-box; }
 
-    #ptt { 
-      width: 100%; 
-      padding: 30px 16px; 
-      font-size: 1.2rem;
-      font-weight: 800;
-      background: #dc2626; /* Red for PTT */
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    /* Header compact */
+    .header { background: white; padding: 12px; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 10px; }
+    .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+    h1 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.025em; }
 
-      /* CRITIQUE : Désactiver toute sélection */
+    /* Inputs */
+    input[type=number] { width: 60px; padding: 8px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 16px; text-align: center; }
+    .btn { border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+    .btn-black { background: #111827; color: white; }
+    .btn-black:disabled { background: #9ca3af; }
+
+    /* Status pills */
+    .status-row { display: flex; gap: 8px; font-size: 0.8rem; color: #6b7280; font-family: monospace; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; display: inline-block; }
+    .connected { background: #10b981; }
+    .disconnected { background: #ef4444; }
+
+    /* PTT Button - The Main Event */
+    .ptt-container { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 200px; }
+    #ptt {
+      width: 100%;
+      height: 100%;
+      max-height: 400px;
+      border: none;
+      border-radius: 24px;
+      background: linear-gradient(145deg, #ef4444, #dc2626);
+      color: white;
+      font-size: 1.5rem;
+      font-weight: 900;
+      letter-spacing: 1px;
+      box-shadow: 0 10px 15px -3px rgba(220, 38, 38, 0.4), 0 4px 6px -2px rgba(220, 38, 38, 0.2), inset 0 2px 4px rgba(255,255,255,0.3);
+      transition: transform 0.1s, box-shadow 0.1s;
+
+      /* CRITIQUE pour Mobile */
+      touch-action: none;
       -webkit-user-select: none;
       user-select: none;
       -webkit-touch-callout: none;
-      touch-action: none; /* Empêche scroll/zoom quand on appuie */
+      outline: none;
     }
-    #ptt:active:not([disabled]) {
-      background: #b91c1c;
+    #ptt:active:not([disabled]), #ptt.active {
+      transform: scale(0.98);
+      background: linear-gradient(145deg, #dc2626, #b91c1c);
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2), inset 0 4px 8px rgba(0,0,0,0.3);
+    }
+    #ptt:disabled {
+      background: #e5e7eb;
+      color: #9ca3af;
+      box-shadow: none;
+      cursor: not-allowed;
     }
 
-    .card { 
-      background: white;
-      border: 1px solid #e5e7eb; 
-      border-radius: 16px; 
-      padding: 16px; 
-      margin-top: 16px; 
-      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-    }
-    code { background:#f3f4f6; padding: 2px 6px; border-radius: 6px; font-family: monospace; font-size: 0.9em; word-break: break-all;}
-    h1 { margin-top: 0; font-size: 1.5rem; }
-    label { font-weight: 500; }
+    /* Logs */
+    .logs { background: white; border-radius: 12px; padding: 12px; max-height: 120px; overflow-y: auto; font-size: 0.75rem; font-family: monospace; border: 1px solid #e5e7eb; }
   </style>
 </head>
 <body>
-  <h1>Sicho Radio <small style="font-size:0.5em; color:#6b7280">v3 Smooth</small></h1>
-
-  <div class="card">
-    <div class="row">
-      <label>Canal</label>
-      <input id="channel" type="number" min="1" max="255" value="1" style="width: 60px" />
-      <button id="connect">Connexion</button>
-      <button id="disconnect" disabled style="background:#4b5563">Déco.</button>
+  <div class="container">
+    <div class="header">
+      <div class="row">
+        <h1>Sicho Radio <span style="color:#ef4444">V4</span></h1>
+        <div class="status-row">
+          <span id="statusDot" class="status-dot"></span>
+          <span id="statusText">Déconnecté</span>
+        </div>
+      </div>
+      <div class="row">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <label style="font-size:0.9rem; font-weight:600;">CH</label>
+          <input id="channel" type="number" value="1" min="1" max="255">
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button id="connect" class="btn btn-black">ON</button>
+          <button id="disconnect" disabled class="btn btn-black" style="background:#ef4444">OFF</button>
+        </div>
+      </div>
+      <div id="remotePtt" style="font-size:0.8rem; color:#2563eb; font-weight:700; height:1rem;"></div>
     </div>
 
-    <div style="margin-top:12px; font-size: 0.9rem; color: #374151;">
-      <p style="margin:4px 0">Status: <strong id="status">déconnecté</strong></p>
-      <p style="margin:4px 0">Remote: <strong id="remotePtt" style="color:#2563eb">silence</strong></p>
-      <p style="margin:4px 0">Info: <code id="techInfo">-</code></p>
+    <div class="ptt-container">
+      <button id="ptt" disabled>PTT</button>
     </div>
-  </div>
 
-  <div class="card">
-    <button id="ptt" disabled>MAINTENIR POUR PARLER</button>
-    <p style="margin:8px 0 0; font-size: 0.85rem; color: #6b7280;">
-      Technologie <strong>Jitter Buffer</strong> activée : parle normalement, la fluidité est gérée automatiquement.
-    </p>
-  </div>
-
-  <div class="card">
-    <h3 style="margin-top:0">Logs</h3>
-    <pre id="log" style="white-space:pre-wrap; margin:0; height: 100px; overflow-y: auto; font-size: 0.8rem; border-top:1px solid #eee; padding-top:8px;"></pre>
+    <div class="logs" id="log"></div>
   </div>
 
   <script type="module" src="./app.js"></script>
   <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js', { scope: './' });
-    }
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
   </script>
 </body>
 </html>
