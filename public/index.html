@@ -5,30 +5,76 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/icon-192.png">
-  <title>Sicho Radio (V4)</title>
+  <title>Sicho Radio (V5)</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: #f3f4f6; color: #1f2937; -webkit-tap-highlight-color: transparent; }
-    .container { max-width: 480px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; height: 100vh; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+      margin: 0; 
+      background-color: #f3f4f6; 
+      color: #1f2937; 
+      -webkit-tap-highlight-color: transparent; 
+      /* Empêche le bounce scroll sur iOS */
+      overscroll-behavior-y: none;
+    }
+    .container { 
+      max-width: 480px; 
+      margin: 0 auto; 
+      padding: 16px; 
+      display: flex; 
+      flex-direction: column; 
+      gap: 16px; 
+      height: 100vh; 
+      box-sizing: border-box; 
+    }
 
-    /* Header compact */
-    .header { background: white; padding: 12px; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 10px; }
+    .header { 
+      background: white; 
+      padding: 16px; 
+      border-radius: 16px; 
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05); 
+      display: flex; 
+      flex-direction: column; 
+      gap: 12px; 
+    }
+
     .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
     h1 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.025em; }
 
-    /* Inputs */
-    input[type=number] { width: 60px; padding: 8px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 16px; text-align: center; }
-    .btn { border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s; }
-    .btn-black { background: #111827; color: white; }
-    .btn-black:disabled { background: #9ca3af; }
+    /* Inputs + Buttons tactiles améliorés */
+    input[type=number] { 
+      width: 60px; 
+      height: 44px; /* Zone tactile min Apple */
+      padding: 0 8px; 
+      border: 1px solid #d1d5db; 
+      border-radius: 8px; 
+      font-size: 18px; 
+      text-align: center; 
+      box-sizing: border-box;
+    }
 
-    /* Status pills */
-    .status-row { display: flex; gap: 8px; font-size: 0.8rem; color: #6b7280; font-family: monospace; }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; display: inline-block; }
+    .btn { 
+      border: none; 
+      height: 44px; /* Zone tactile min Apple */
+      padding: 0 20px; 
+      border-radius: 8px; 
+      font-weight: 600; 
+      font-size: 15px; 
+      cursor: pointer; 
+      transition: opacity 0.2s;
+      /* Important sur mobile */
+      touch-action: manipulation; 
+    }
+    .btn-black { background: #111827; color: white; }
+    .btn-black:disabled { background: #e5e7eb; color: #9ca3af; }
+    .btn-red { background: #ef4444; color: white; }
+
+    .status-row { display: flex; gap: 8px; font-size: 0.8rem; color: #6b7280; font-family: monospace; align-items: center;}
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #d1d5db; display: inline-block; }
     .connected { background: #10b981; }
     .disconnected { background: #ef4444; }
 
-    /* PTT Button - The Main Event */
     .ptt-container { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 200px; }
+
     #ptt {
       width: 100%;
       height: 100%;
@@ -41,52 +87,58 @@
       font-weight: 900;
       letter-spacing: 1px;
       box-shadow: 0 10px 15px -3px rgba(220, 38, 38, 0.4), 0 4px 6px -2px rgba(220, 38, 38, 0.2), inset 0 2px 4px rgba(255,255,255,0.3);
-      transition: transform 0.1s, box-shadow 0.1s;
+      transition: transform 0.1s;
 
-      /* CRITIQUE pour Mobile */
-      touch-action: none;
+      /* CRITIQUE MOBILE */
+      touch-action: none; 
       -webkit-user-select: none;
       user-select: none;
       -webkit-touch-callout: none;
       outline: none;
     }
-    #ptt:active:not([disabled]), #ptt.active {
-      transform: scale(0.98);
+
+    /* État actif géré par JS class 'active' pour éviter délai :active sur mobile */
+    #ptt.active {
+      transform: scale(0.96);
       background: linear-gradient(145deg, #dc2626, #b91c1c);
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2), inset 0 4px 8px rgba(0,0,0,0.3);
+      box-shadow: inset 0 4px 8px rgba(0,0,0,0.3);
     }
     #ptt:disabled {
-      background: #e5e7eb;
+      background: #f3f4f6;
+      border: 2px dashed #d1d5db;
       color: #9ca3af;
       box-shadow: none;
       cursor: not-allowed;
     }
 
-    /* Logs */
-    .logs { background: white; border-radius: 12px; padding: 12px; max-height: 120px; overflow-y: auto; font-size: 0.75rem; font-family: monospace; border: 1px solid #e5e7eb; }
+    .logs { background: white; border-radius: 12px; padding: 12px; height: 100px; overflow-y: auto; font-size: 0.75rem; font-family: monospace; border: 1px solid #e5e7eb; color:#4b5563; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
       <div class="row">
-        <h1>Sicho Radio <span style="color:#ef4444">V4</span></h1>
+        <h1>Sicho Radio <span style="color:#ef4444">V5</span></h1>
         <div class="status-row">
           <span id="statusDot" class="status-dot"></span>
           <span id="statusText">Déconnecté</span>
         </div>
       </div>
+
+      <!-- Ligne de commande: Canal + Connect + Disconnect -->
       <div class="row">
         <div style="display:flex; align-items:center; gap:8px;">
           <label style="font-size:0.9rem; font-weight:600;">CH</label>
-          <input id="channel" type="number" value="1" min="1" max="255">
+          <input id="channel" type="number" value="1" min="1" max="255" inputmode="numeric">
         </div>
-        <div style="display:flex; gap:8px;">
+
+        <div style="display:flex; gap:8px; flex:1; justify-content:flex-end;">
           <button id="connect" class="btn btn-black">ON</button>
-          <button id="disconnect" disabled class="btn btn-black" style="background:#ef4444">OFF</button>
+          <button id="disconnect" disabled class="btn btn-red">OFF</button>
         </div>
       </div>
-      <div id="remotePtt" style="font-size:0.8rem; color:#2563eb; font-weight:700; height:1rem;"></div>
+
+      <div id="remotePtt" style="font-size:0.8rem; color:#2563eb; font-weight:700; min-height:1rem;"></div>
     </div>
 
     <div class="ptt-container">
