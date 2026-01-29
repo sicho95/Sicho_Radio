@@ -1,0 +1,27 @@
+[
+  {
+    "id": 1,
+    "name": "G\u00e9n\u00e9ral (PMR 1)",
+    "freq": "446.00625 MHz"
+  },
+  {
+    "id": 2,
+    "name": "S\u00e9curit\u00e9 (PMR 2)",
+    "freq": "446.01875 MHz"
+  },
+  {
+    "id": 3,
+    "name": "Logistique (PMR 3)",
+    "freq": "446.03125 MHz"
+  },
+  {
+    "id": 4,
+    "name": "Urgence (PMR 8)",
+    "freq": "446.09375 MHz"
+  },
+  {
+    "id": 99,
+    "name": "Test Loopback",
+    "freq": "N/A"
+  }
+]

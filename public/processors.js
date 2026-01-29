@@ -1,4 +1,4 @@
-// processors.js V7
+// processors.js V8 (Identique V7)
 const TARGET_SAMPLE_RATE = 16000;
 
 class CaptureProcessor extends AudioWorkletProcessor {

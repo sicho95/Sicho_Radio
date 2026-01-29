@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/icon-192.png">
-  <title>Sicho Radio (V7)</title>
+  <title>Sicho Radio (V8)</title>
   <style>
     body { 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
@@ -39,15 +39,26 @@
     .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
     h1 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.025em; }
 
-    input[type=number] { 
-      width: 60px; 
-      height: 44px; 
-      padding: 0 8px; 
-      border: 1px solid #d1d5db; 
-      border-radius: 8px; 
-      font-size: 18px; 
-      text-align: center; 
-      box-sizing: border-box;
+    /* STYLE SELECT */
+    select {
+      flex: 1;
+      height: 44px;
+      padding: 0 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 16px;
+      background: white;
+      color: #1f2937;
+    }
+
+    .freq-display {
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: #6b7280;
+      background: #f3f4f6;
+      padding: 4px 8px;
+      border-radius: 4px;
+      text-align: right;
     }
 
     .btn { 
@@ -130,23 +141,25 @@
   <div class="container">
     <div class="header">
       <div class="row">
-        <h1>Sicho Radio <span style="color:#ef4444">V7</span></h1>
+        <h1>Sicho Radio <span style="color:#ef4444">V8</span></h1>
         <div class="status-row">
           <span id="statusDot" class="status-dot"></span>
           <span id="statusText">Déconnecté</span>
         </div>
       </div>
 
+      <!-- Selection Canal -->
+      <div class="row" style="margin-top:8px; margin-bottom:8px;">
+         <select id="channelSelect" disabled>
+           <option value="">Chargement...</option>
+         </select>
+      </div>
       <div class="row">
-        <div style="display:flex; align-items:center; gap:8px;">
-          <label style="font-size:0.9rem; font-weight:600;">CH</label>
-          <input id="channel" type="number" value="1" min="1" max="255" inputmode="numeric">
-        </div>
-
-        <div style="display:flex; gap:8px; flex:1; justify-content:flex-end;">
-          <button id="connect" class="btn btn-black">ON</button>
-          <button id="disconnect" disabled class="btn btn-red">OFF</button>
-        </div>
+         <div id="freqDisplay" class="freq-display">--- MHz</div>
+         <div style="display:flex; gap:8px;">
+            <button id="connect" class="btn btn-black">ON</button>
+            <button id="disconnect" disabled class="btn btn-red">OFF</button>
+         </div>
       </div>
 
       <div id="remotePtt" style="font-size:0.8rem; color:#2563eb; font-weight:700; min-height:1rem;"></div>
