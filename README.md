@@ -1,13 +1,11 @@
-# Sicho Radio (PWA test)
+# PWA GitHub Pages (AudioWorklet ultra low-latency)
 
-- Backend: Node.js + ws (WebSocket relay)
-- PWA: disponible sur `/pwa`
+- URL: https://sicho95.github.io/Sicho_Radio/public/
+- Backend (Koyeb): https://mobile-avivah-sicho-96db3843.koyeb.app
+- Audio: pcm_s16le/16000Hz/mono
+- Capture: AudioWorklet (fallback ScriptProcessor)
 
-## Endpoints
-- `/` : JSON status (conservé pour compat)
-- `/api/status` : JSON status
-- `/health` : healthcheck
-- `/ws` : WebSocket
-
-## Test PWA
-Ouvre `https://<ton-service>/pwa` sur deux téléphones, même canal, puis maintiens le bouton PTT.
+Corrections:
+- AudioWorklet pour latence minimale
+- Bruit blanc corrigé (division Int16 / 0x8000 au lieu de 32768)
+- Sélection texte bouton désactivée (touch-action: none + selectstart)
