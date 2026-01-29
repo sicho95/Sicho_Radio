@@ -10,12 +10,17 @@ permissions:
 
 jobs:
   lockfile:
+    # Empêche la boucle: le commit fait par github-actions[bot] ne relance pas un nouveau commit.
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Nécessaire pour pouvoir push depuis l'action
+          persist-credentials: true
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -26,8 +31,10 @@ jobs:
         run: npm install --package-lock-only
 
       - name: Commit & push if changed
+        shell: bash
         run: |
-          if git diff --quiet; then
+          # Inclut aussi les fichiers non suivis (ex: package-lock.json créé pour la 1ère fois)
+          if [ -z "$(git status --porcelain)" ]; then
             echo "No changes."
             exit 0
           fi
