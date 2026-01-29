@@ -2,7 +2,7 @@ name: Ensure npm lockfile
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch: {}
 
 permissions:
@@ -12,11 +12,10 @@ jobs:
   lockfile:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -37,5 +36,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add package-lock.json
-          git commit -m "chore: add/update package-lock.json [skip ci]"
+          git commit -m "chore: add/update package-lock.json"
           git push
