@@ -11,19 +11,19 @@
     body { font-family: system-ui, sans-serif; margin: 16px; color: #111; }
     .row { display:flex; gap: 12px; align-items:center; flex-wrap: wrap; }
     input, button { font-size: 16px; padding: 10px 12px; }
-    button { border: 0; border-radius: 10px; background: #111827; color: white; }
-    button[disabled] { background: #9ca3af; }
-    #ptt { width: 100%; padding: 18px 16px; font-weight: 700; }
-    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; margin-top: 12px; }
-    code { background:#f3f4f6; padding: 2px 6px; border-radius: 6px; }
-
-    /* Anti sélection / anti menu contextuel iOS */
-    #ptt {
+    button { border: 0; border-radius: 10px; background: #111827; color: white; cursor: pointer; }
+    button[disabled] { background: #9ca3af; cursor: not-allowed; }
+    #ptt { 
+      width: 100%; 
+      padding: 18px 16px; 
+      font-weight: 700;
       -webkit-user-select: none;
       user-select: none;
       -webkit-touch-callout: none;
-      touch-action: manipulation;
+      touch-action: none;
     }
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; margin-top: 12px; }
+    code { background:#f3f4f6; padding: 2px 6px; border-radius: 6px; }
   </style>
 </head>
 <body>
@@ -39,7 +39,7 @@
 
     <p>Backend: <code id="backendUrl"></code></p>
     <p>WS: <code id="wsUrl"></code></p>
-    <p>Format: <code>pcm_s16le/16000Hz/mono</code></p>
+    <p>Format: <code>pcm_s16le/16000Hz/mono (AudioWorklet)</code></p>
     <p>État: <strong id="status">disconnected</strong></p>
     <p>Remote PTT: <strong id="remotePtt">idle</strong></p>
     <p>Backend status: <strong id="backendStatus">unknown</strong></p>
@@ -47,7 +47,7 @@
 
   <div class="card">
     <button id="ptt" disabled>Maintiens pour parler (PTT)</button>
-    <p style="margin:8px 0 0">Tu peux garder appuyé longtemps: l’audio est envoyé en continu par petites trames (quasi temps réel).</p>
+    <p style="margin:8px 0 0">Tu peux garder appuyé longtemps: l'audio est envoyé en continu (latence ultra-basse via AudioWorklet).</p>
   </div>
 
   <div class="card">

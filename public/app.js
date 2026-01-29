@@ -1,9 +1,8 @@
 // GitHub Pages => chemins relatifs + backend externe (Koyeb)
-// Audio: PCM16 mono @ 16000 Hz (streaming temps réel via WebAudio)
+// Audio: PCM16 mono @ 16000 Hz (streaming temps réel via AudioWorklet)
 
 const BACKEND = "https://mobile-avivah-sicho-96db3843.koyeb.app";
 const WS_URL = BACKEND.replace(/^http/, 'ws') + '/ws';
-
 const TARGET_SR = 16000;
 
 const el = (id) => document.getElementById(id);
@@ -24,14 +23,14 @@ wsUrlEl.textContent = WS_URL;
 
 let ws = null;
 
-// Audio capture
-let mediaStream = null;
-let audioCtx = null;
-let micSource = null;
-let processor = null;
+// Capture AudioWorklet
+let captureCtx = null;
+let captureStream = null;
+let captureSource = null;
+let captureNode = null;
 let sending = false;
 
-// Audio playback queue (remote)
+// Playback
 let playCtx = null;
 let nextPlayTime = 0;
 let remoteTalking = false;
@@ -74,32 +73,18 @@ async function ensurePlayContext() {
 }
 
 async function ensureCaptureContext() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state !== 'running') await audioCtx.resume();
-  return audioCtx;
-}
-
-function downsampleToInt16(float32, inSampleRate, outSampleRate) {
-  const ratio = inSampleRate / outSampleRate;
-  const newLen = Math.floor(float32.length / ratio);
-  const out = new Int16Array(newLen);
-
-  let offset = 0;
-  for (let i = 0; i < newLen; i++) {
-    const nextOffset = Math.floor((i + 1) * ratio);
-    let sum = 0;
-    let count = 0;
-    for (let j = offset; j < nextOffset && j < float32.length; j++) {
-      sum += float32[j];
-      count++;
+  if (!captureCtx) {
+    captureCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if ('audioWorklet' in captureCtx) {
+      try {
+        await captureCtx.audioWorklet.addModule('./capture-worklet-processor.js');
+      } catch (err) {
+        log('Worklet load error:', err.message);
+      }
     }
-    offset = nextOffset;
-    let s = count ? (sum / count) : 0;
-    s = Math.max(-1, Math.min(1, s));
-    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
   }
-
-  return out;
+  if (captureCtx.state !== 'running') await captureCtx.resume();
+  return captureCtx;
 }
 
 async function startCaptureAndSend() {
@@ -108,34 +93,59 @@ async function startCaptureAndSend() {
 
   await ensureCaptureContext();
 
-  if (!mediaStream) mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  if (!micSource) micSource = audioCtx.createMediaStreamSource(mediaStream);
+  if (!captureStream) {
+    captureStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  }
 
-  const bufferSize = 2048;
-  processor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+  if (!captureSource) captureSource = captureCtx.createMediaStreamSource(captureStream);
 
-  processor.onaudioprocess = (e) => {
-    if (!sending || !ws || ws.readyState !== WebSocket.OPEN) return;
-
-    const input = e.inputBuffer.getChannelData(0);
-    const pcm16 = downsampleToInt16(input, audioCtx.sampleRate, TARGET_SR);
-    if (pcm16.length === 0) return;
-
-    ws.send(pcm16.buffer);
-  };
-
-  micSource.connect(processor);
-  processor.connect(audioCtx.destination);
+  if ('audioWorklet' in captureCtx) {
+    captureNode = new AudioWorkletNode(captureCtx, 'capture-processor');
+    captureNode.port.onmessage = (e) => {
+      if (!sending || !ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(e.data);
+    };
+    captureSource.connect(captureNode);
+    captureNode.connect(captureCtx.destination);
+  } else {
+    log('AudioWorklet non supporté, fallback ScriptProcessor');
+    const bufferSize = 2048;
+    captureNode = captureCtx.createScriptProcessor(bufferSize, 1, 1);
+    captureNode.onaudioprocess = (e) => {
+      if (!sending || !ws || ws.readyState !== WebSocket.OPEN) return;
+      const input = e.inputBuffer.getChannelData(0);
+      const ratio = captureCtx.sampleRate / TARGET_SR;
+      const newLen = Math.floor(input.length / ratio);
+      const pcm16 = new Int16Array(newLen);
+      let offset = 0;
+      for (let i = 0; i < newLen; i++) {
+        const nextOffset = Math.floor((i + 1) * ratio);
+        let sum = 0, count = 0;
+        for (let j = offset; j < nextOffset && j < input.length; j++) {
+          sum += input[j];
+          count++;
+        }
+        offset = nextOffset;
+        let s = count ? (sum / count) : 0;
+        s = Math.max(-1, Math.min(1, s));
+        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      ws.send(pcm16.buffer);
+    };
+    captureSource.connect(captureNode);
+    captureNode.connect(captureCtx.destination);
+  }
 
   sending = true;
 }
 
 function stopCaptureAndSend() {
   sending = false;
-  if (processor) {
-    try { processor.disconnect(); } catch {}
-    processor.onaudioprocess = null;
-    processor = null;
+  if (captureNode) {
+    try { captureNode.disconnect(); } catch {}
+    if (captureNode.port) captureNode.port.onmessage = null;
+    if (captureNode.onaudioprocess) captureNode.onaudioprocess = null;
+    captureNode = null;
   }
 }
 
@@ -246,18 +256,37 @@ function stopPtt() {
 connectBtn.addEventListener('click', connect);
 disconnectBtn.addEventListener('click', disconnect);
 
+// Empêche menu contextuel + sélection
 pttBtn.addEventListener('contextmenu', (e) => e.preventDefault());
-pttBtn.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+pttBtn.addEventListener('selectstart', (e) => e.preventDefault());
+
+pttBtn.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  startPtt();
+}, { passive: false });
+
+pttBtn.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  stopPtt();
+}, { passive: false });
+
+pttBtn.addEventListener('touchcancel', (e) => {
+  e.preventDefault();
+  stopPtt();
+});
 
 pttBtn.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   startPtt();
 });
+
 pttBtn.addEventListener('pointerup', (e) => {
   e.preventDefault();
   stopPtt();
 });
+
 pttBtn.addEventListener('pointercancel', stopPtt);
+
 pttBtn.addEventListener('pointerleave', (e) => {
   if (e.buttons === 0) stopPtt();
 });
