@@ -1,0 +1,38 @@
+name: Ensure npm lockfile
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Generate/Update package-lock.json
+        run: |
+          npm install --package-lock-only
+          npm pkg delete scripts.prepare || true
+
+      - name: Commit changes (if any)
+        uses: step-security/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update package-lock.json"
+          file_pattern: package-lock.json package.json
