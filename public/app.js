@@ -37,8 +37,7 @@ let nextPlayTime = 0;
 let remoteTalking = false;
 
 function log(...args) {
-  logEl.textContent += args.join(' ') + '
-';
+  logEl.textContent += args.join(' ') + '\n';
   logEl.scrollTop = logEl.scrollHeight;
 }
 
