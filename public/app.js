@@ -1,5 +1,5 @@
 // GitHub Pages => chemins relatifs + backend externe (Koyeb)
-// Audio: PCM16 mono @ 16000 Hz (streaming temps réel via AudioWorklet)
+// V3: AudioWorklet Capture + Playback (Jitter Buffer)
 
 const BACKEND = "https://mobile-avivah-sicho-96db3843.koyeb.app";
 const WS_URL = BACKEND.replace(/^http/, 'ws') + '/ws';
@@ -9,39 +9,37 @@ const el = (id) => document.getElementById(id);
 const logEl = el('log');
 const statusEl = el('status');
 const remotePttEl = el('remotePtt');
-const wsUrlEl = el('wsUrl');
-const backendUrlEl = el('backendUrl');
-const backendStatusEl = el('backendStatus');
+const techInfoEl = el('techInfo');
 
 const channelEl = el('channel');
 const connectBtn = el('connect');
 const disconnectBtn = el('disconnect');
 const pttBtn = el('ptt');
 
-backendUrlEl.textContent = BACKEND;
-wsUrlEl.textContent = WS_URL;
-
 let ws = null;
+let audioCtx = null; // Contexte unique partagé (Capture & Playback)
 
-// Capture AudioWorklet
-let captureCtx = null;
-let captureStream = null;
-let captureSource = null;
+// Nodes AudioWorklet
 let captureNode = null;
+let captureSource = null;
+let captureStream = null;
+
+let playbackNode = null;
+
 let sending = false;
 
-// Playback
-let playCtx = null;
-let nextPlayTime = 0;
-let remoteTalking = false;
-
 function log(...args) {
-  logEl.textContent += args.join(' ') + '\n';
+  const txt = args.join(' ');
+  logEl.textContent += txt + '\n';
   logEl.scrollTop = logEl.scrollHeight;
+  console.log('[App]', txt);
 }
 
 function setStatus(s) {
   statusEl.textContent = s;
+  if (s === 'connected') statusEl.style.color = 'green';
+  else if (s === 'disconnected') statusEl.style.color = 'red';
+  else statusEl.style.color = 'orange';
 }
 
 function wsSendJson(obj) {
@@ -49,128 +47,118 @@ function wsSendJson(obj) {
   ws.send(JSON.stringify(obj));
 }
 
-async function refreshBackendStatus() {
-  try {
-    const r = await fetch(BACKEND + '/api/status', { cache: 'no-store' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const j = await r.json();
-    backendStatusEl.textContent = j.status || 'ok';
-  } catch {
+async function ensureAudioContext() {
+  if (!audioCtx) {
+    // Création du contexte
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({
+      latencyHint: 'interactive',
+      sampleRate: 48000 // Force standard si possible, sinon le navigateur décide
+    });
+
+    // Chargement du module processeur (Unique fichier pour les 2 processors)
     try {
-      const r2 = await fetch(BACKEND + '/', { cache: 'no-store' });
-      const j2 = await r2.json();
-      backendStatusEl.textContent = j2.status || 'ok';
-    } catch {
-      backendStatusEl.textContent = 'unreachable';
+      await audioCtx.audioWorklet.addModule('./processors.js');
+      techInfoEl.textContent = `CTX: ${audioCtx.sampleRate}Hz | Target: ${TARGET_SR}Hz`;
+      log('AudioWorklet module loaded.');
+    } catch (e) {
+      log('ERREUR: Impossible de charger processors.js', e);
+      techInfoEl.textContent = 'Erreur Worklet';
     }
+  }
+
+  if (audioCtx.state !== 'running') {
+    await audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+// ----------------------------------------------------------------------
+// PLAYBACK (Réception)
+// ----------------------------------------------------------------------
+async function startPlaybackEngine() {
+  const ctx = await ensureAudioContext();
+
+  // Si déjà actif, rien à faire
+  if (playbackNode) return;
+
+  try {
+    playbackNode = new AudioWorkletNode(ctx, 'playback-processor');
+    playbackNode.connect(ctx.destination);
+    log('Playback engine started (Jitter Buffer ready)');
+  } catch (e) {
+    log('Playback engine init fail:', e);
   }
 }
 
-async function ensurePlayContext() {
-  if (!playCtx) playCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (playCtx.state !== 'running') await playCtx.resume();
-  return playCtx;
-}
-
-async function ensureCaptureContext() {
-  if (!captureCtx) {
-    captureCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if ('audioWorklet' in captureCtx) {
-      try {
-        await captureCtx.audioWorklet.addModule('./capture-worklet-processor.js');
-      } catch (err) {
-        log('Worklet load error:', err.message);
-      }
-    }
-  }
-  if (captureCtx.state !== 'running') await captureCtx.resume();
-  return captureCtx;
-}
-
-async function startCaptureAndSend() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+// ----------------------------------------------------------------------
+// CAPTURE (Émission)
+// ----------------------------------------------------------------------
+async function startCapture() {
   if (sending) return;
 
-  await ensureCaptureContext();
+  const ctx = await ensureAudioContext();
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-  if (!captureStream) {
-    captureStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  }
+  try {
+    // Micro
+    if (!captureStream) {
+      captureStream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
+    }
 
-  if (!captureSource) captureSource = captureCtx.createMediaStreamSource(captureStream);
+    captureSource = ctx.createMediaStreamSource(captureStream);
 
-  if ('audioWorklet' in captureCtx) {
-    captureNode = new AudioWorkletNode(captureCtx, 'capture-processor');
+    // Worklet Capture
+    captureNode = new AudioWorkletNode(ctx, 'capture-processor');
+
+    // Événement: Worklet envoie des données PCM au Main Thread
     captureNode.port.onmessage = (e) => {
-      if (!sending || !ws || ws.readyState !== WebSocket.OPEN) return;
-      ws.send(e.data);
-    };
-    captureSource.connect(captureNode);
-    captureNode.connect(captureCtx.destination);
-  } else {
-    log('AudioWorklet non supporté, fallback ScriptProcessor');
-    const bufferSize = 2048;
-    captureNode = captureCtx.createScriptProcessor(bufferSize, 1, 1);
-    captureNode.onaudioprocess = (e) => {
-      if (!sending || !ws || ws.readyState !== WebSocket.OPEN) return;
-      const input = e.inputBuffer.getChannelData(0);
-      const ratio = captureCtx.sampleRate / TARGET_SR;
-      const newLen = Math.floor(input.length / ratio);
-      const pcm16 = new Int16Array(newLen);
-      let offset = 0;
-      for (let i = 0; i < newLen; i++) {
-        const nextOffset = Math.floor((i + 1) * ratio);
-        let sum = 0, count = 0;
-        for (let j = offset; j < nextOffset && j < input.length; j++) {
-          sum += input[j];
-          count++;
-        }
-        offset = nextOffset;
-        let s = count ? (sum / count) : 0;
-        s = Math.max(-1, Math.min(1, s));
-        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(e.data); // ArrayBuffer Int16
       }
-      ws.send(pcm16.buffer);
     };
-    captureSource.connect(captureNode);
-    captureNode.connect(captureCtx.destination);
-  }
 
-  sending = true;
+    captureSource.connect(captureNode);
+    // Note: On ne connecte PAS à destination pour éviter retour voix local
+
+    sending = true;
+    pttBtn.style.background = '#16a34a'; // Vert
+    pttBtn.textContent = 'EN ÉMISSION...';
+
+  } catch (e) {
+    log('Capture start error:', e);
+    stopCapture();
+  }
 }
 
-function stopCaptureAndSend() {
+function stopCapture() {
   sending = false;
+  pttBtn.style.background = ''; // Reset
+  pttBtn.textContent = 'MAINTENIR POUR PARLER';
+
   if (captureNode) {
-    try { captureNode.disconnect(); } catch {}
-    if (captureNode.port) captureNode.port.onmessage = null;
-    if (captureNode.onaudioprocess) captureNode.onaudioprocess = null;
+    captureNode.disconnect();
     captureNode = null;
   }
+  if (captureSource) {
+    captureSource.disconnect();
+    captureSource = null;
+  }
+  // On garde le stream ouvert pour réactivité, ou on le coupe si on veut
+  // captureStream.getTracks().forEach(t => t.stop()); captureStream = null; 
 }
 
-async function schedulePcmPlayback(arrayBuffer) {
-  const ctx = await ensurePlayContext();
-  const int16 = new Int16Array(arrayBuffer);
-  if (int16.length === 0) return;
 
-  const float32 = new Float32Array(int16.length);
-  for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 0x8000;
-
-  const audioBuffer = ctx.createBuffer(1, float32.length, TARGET_SR);
-  audioBuffer.getChannelData(0).set(float32);
-
-  const src = ctx.createBufferSource();
-  src.buffer = audioBuffer;
-  src.connect(ctx.destination);
-
-  const startAt = Math.max(ctx.currentTime + 0.05, nextPlayTime || 0);
-  src.start(startAt);
-  nextPlayTime = startAt + audioBuffer.duration;
-}
-
+// ----------------------------------------------------------------------
+// WEBSOCKET
+// ----------------------------------------------------------------------
 function connect() {
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  if (ws) return;
 
   ws = new WebSocket(WS_URL);
   ws.binaryType = 'arraybuffer';
@@ -184,31 +172,34 @@ function connect() {
     pttBtn.disabled = false;
 
     const channel = Math.max(1, Math.min(255, parseInt(channelEl.value, 10) || 1));
-    wsSendJson({ type: 'join', channel, role: 'pwa' });
+    wsSendJson({ type: 'join', channel, role: 'pwa_v3' });
+    log('Connected to Channel', channel);
 
-    await refreshBackendStatus();
-    log('WS open, joined channel', channel);
+    // Démarrer moteur playback (écoute) immédiatement
+    await startPlaybackEngine();
   };
 
   ws.onmessage = (evt) => {
+    // 1. TEXTE (Signalo)
     if (typeof evt.data === 'string') {
       try {
         const msg = JSON.parse(evt.data);
-        if (msg.type === 'joined') log('Joined OK:', msg.channel);
-
         if (msg.type === 'ptt') {
-          remotePttEl.textContent = msg.state || 'unknown';
+          remotePttEl.textContent = msg.state === 'start' ? 'EN LIGNE...' : 'silence';
           if (msg.state === 'start') {
-            remoteTalking = true;
-            nextPlayTime = 0;
+             // Optionnel: Reset jitter buffer si nouvelle phrase ?
+             // Non, le processor gère ça (auto-start quand buffer rempli)
           }
-          if (msg.state === 'stop') remoteTalking = false;
         }
       } catch {}
       return;
     }
 
-    if (remoteTalking) schedulePcmPlayback(evt.data).catch(() => {});
+    // 2. BINAIRE (Audio reçu)
+    // On envoie direct au Playback Worklet
+    if (playbackNode) {
+      playbackNode.port.postMessage(evt.data);
+    }
   };
 
   ws.onclose = () => {
@@ -216,77 +207,48 @@ function connect() {
     connectBtn.disabled = false;
     disconnectBtn.disabled = true;
     pttBtn.disabled = true;
-    remotePttEl.textContent = 'idle';
-    remoteTalking = false;
-    nextPlayTime = 0;
-    log('WS closed');
+    ws = null;
+
+    // Cleanup nodes
+    if (playbackNode) { playbackNode.disconnect(); playbackNode = null; }
+    stopCapture();
   };
 
-  ws.onerror = () => log('WS error');
+  ws.onerror = () => {
+    log('WS Error');
+  };
 }
 
 function disconnect() {
-  stopCaptureAndSend();
   if (ws) ws.close();
-  ws = null;
 }
 
-async function startPtt() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-  await ensurePlayContext();
-  await ensureCaptureContext();
-
-  wsSendJson({
-    type: 'ptt',
-    state: 'start',
-    format: { encoding: 'pcm_s16le', sampleRate: TARGET_SR, channels: 1 }
-  });
-
-  await startCaptureAndSend();
-  pttBtn.textContent = 'PARLE… (relâche pour stopper)';
-}
-
-function stopPtt() {
-  wsSendJson({ type: 'ptt', state: 'stop' });
-  stopCaptureAndSend();
-  pttBtn.textContent = 'Maintiens pour parler (PTT)';
-}
-
+// ----------------------------------------------------------------------
+// UI EVENTS
+// ----------------------------------------------------------------------
 connectBtn.addEventListener('click', connect);
 disconnectBtn.addEventListener('click', disconnect);
 
-// Empêche menu contextuel + sélection
-pttBtn.addEventListener('contextmenu', (e) => e.preventDefault());
-pttBtn.addEventListener('selectstart', (e) => e.preventDefault());
+// PTT Logic
+const startTx = (e) => {
+  if (e.cancelable) e.preventDefault();
+  startCapture();
+};
 
-pttBtn.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-  startPtt();
-}, { passive: false });
+const stopTx = (e) => {
+  if (e.cancelable) e.preventDefault();
+  stopCapture();
+};
 
-pttBtn.addEventListener('touchend', (e) => {
-  e.preventDefault();
-  stopPtt();
-}, { passive: false });
+// Souris
+pttBtn.addEventListener('mousedown', startTx);
+pttBtn.addEventListener('mouseup', stopTx);
+pttBtn.addEventListener('mouseleave', stopTx);
 
-pttBtn.addEventListener('touchcancel', (e) => {
-  e.preventDefault();
-  stopPtt();
-});
+// Touch (Mobile) - Crucial: passive: false
+pttBtn.addEventListener('touchstart', startTx, { passive: false });
+pttBtn.addEventListener('touchend', stopTx, { passive: false });
+pttBtn.addEventListener('touchcancel', stopTx, { passive: false });
 
-pttBtn.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  startPtt();
-});
-
-pttBtn.addEventListener('pointerup', (e) => {
-  e.preventDefault();
-  stopPtt();
-});
-
-pttBtn.addEventListener('pointercancel', stopPtt);
-
-pttBtn.addEventListener('pointerleave', (e) => {
-  if (e.buttons === 0) stopPtt();
-});
+// Anti-sélection barbare
+document.addEventListener('contextmenu', event => event.preventDefault());

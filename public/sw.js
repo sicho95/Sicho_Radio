@@ -1,4 +1,4 @@
-const CACHE = 'sicho-radio-worklet-v2';
+const CACHE = 'sicho-radio-v3-jitter';
 
 self.addEventListener('install', (e) => {
   const scope = self.registration.scope;
@@ -6,7 +6,7 @@ self.addEventListener('install', (e) => {
     './',
     './index.html',
     './app.js',
-    './capture-worklet-processor.js',
+    './processors.js',
     './manifest.webmanifest',
     './icons/icon-192.png',
     './icons/icon-512.png'
@@ -21,6 +21,10 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (url.origin !== location.origin) return;
-  e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request)));
+  // Stratégie : Network First pour dev, puis Cache
+  if (url.origin === location.origin) {
+    e.respondWith(
+      fetch(e.request).catch(() => caches.match(e.request))
+    );
+  }
 });

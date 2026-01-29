@@ -2,57 +2,78 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <meta name="theme-color" content="#111827" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/icon-192.png">
   <title>Sicho Radio (PWA)</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 16px; color: #111; }
+    body { font-family: system-ui, sans-serif; margin: 16px; color: #111; background-color: #f9fafb; }
     .row { display:flex; gap: 12px; align-items:center; flex-wrap: wrap; }
-    input, button { font-size: 16px; padding: 10px 12px; }
-    button { border: 0; border-radius: 10px; background: #111827; color: white; cursor: pointer; }
-    button[disabled] { background: #9ca3af; cursor: not-allowed; }
+    input, button { font-size: 16px; padding: 12px 14px; }
+    button { border: 0; border-radius: 10px; background: #111827; color: white; cursor: pointer; font-weight: 600; }
+    button:active { transform: scale(0.98); }
+    button[disabled] { background: #9ca3af; cursor: not-allowed; transform: none; }
+
     #ptt { 
       width: 100%; 
-      padding: 18px 16px; 
-      font-weight: 700;
+      padding: 30px 16px; 
+      font-size: 1.2rem;
+      font-weight: 800;
+      background: #dc2626; /* Red for PTT */
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+
+      /* CRITIQUE : Désactiver toute sélection */
       -webkit-user-select: none;
       user-select: none;
       -webkit-touch-callout: none;
-      touch-action: none;
+      touch-action: none; /* Empêche scroll/zoom quand on appuie */
     }
-    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; margin-top: 12px; }
-    code { background:#f3f4f6; padding: 2px 6px; border-radius: 6px; }
+    #ptt:active:not([disabled]) {
+      background: #b91c1c;
+    }
+
+    .card { 
+      background: white;
+      border: 1px solid #e5e7eb; 
+      border-radius: 16px; 
+      padding: 16px; 
+      margin-top: 16px; 
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+    }
+    code { background:#f3f4f6; padding: 2px 6px; border-radius: 6px; font-family: monospace; font-size: 0.9em; word-break: break-all;}
+    h1 { margin-top: 0; font-size: 1.5rem; }
+    label { font-weight: 500; }
   </style>
 </head>
 <body>
-  <h1>Sicho Radio</h1>
+  <h1>Sicho Radio <small style="font-size:0.5em; color:#6b7280">v3 Smooth</small></h1>
 
   <div class="card">
     <div class="row">
       <label>Canal</label>
-      <input id="channel" type="number" min="1" max="255" value="1" />
-      <button id="connect">Connect</button>
-      <button id="disconnect" disabled>Disconnect</button>
+      <input id="channel" type="number" min="1" max="255" value="1" style="width: 60px" />
+      <button id="connect">Connexion</button>
+      <button id="disconnect" disabled style="background:#4b5563">Déco.</button>
     </div>
 
-    <p>Backend: <code id="backendUrl"></code></p>
-    <p>WS: <code id="wsUrl"></code></p>
-    <p>Format: <code>pcm_s16le/16000Hz/mono (AudioWorklet)</code></p>
-    <p>État: <strong id="status">disconnected</strong></p>
-    <p>Remote PTT: <strong id="remotePtt">idle</strong></p>
-    <p>Backend status: <strong id="backendStatus">unknown</strong></p>
+    <div style="margin-top:12px; font-size: 0.9rem; color: #374151;">
+      <p style="margin:4px 0">Status: <strong id="status">déconnecté</strong></p>
+      <p style="margin:4px 0">Remote: <strong id="remotePtt" style="color:#2563eb">silence</strong></p>
+      <p style="margin:4px 0">Info: <code id="techInfo">-</code></p>
+    </div>
   </div>
 
   <div class="card">
-    <button id="ptt" disabled>Maintiens pour parler (PTT)</button>
-    <p style="margin:8px 0 0">Tu peux garder appuyé longtemps: l'audio est envoyé en continu (latence ultra-basse via AudioWorklet).</p>
+    <button id="ptt" disabled>MAINTENIR POUR PARLER</button>
+    <p style="margin:8px 0 0; font-size: 0.85rem; color: #6b7280;">
+      Technologie <strong>Jitter Buffer</strong> activée : parle normalement, la fluidité est gérée automatiquement.
+    </p>
   </div>
 
   <div class="card">
-    <h3>Logs</h3>
-    <pre id="log" style="white-space:pre-wrap;margin:0"></pre>
+    <h3 style="margin-top:0">Logs</h3>
+    <pre id="log" style="white-space:pre-wrap; margin:0; height: 100px; overflow-y: auto; font-size: 0.8rem; border-top:1px solid #eee; padding-top:8px;"></pre>
   </div>
 
   <script type="module" src="./app.js"></script>
