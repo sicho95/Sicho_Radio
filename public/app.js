@@ -25,8 +25,7 @@ let mimeType = pickMimeType();
 let playQueue = Promise.resolve();
 
 function log(...args) {
-  logEl.textContent += args.join(' ') + '
-';
+  logEl.textContent += args.join(' ') + '\n';
   logEl.scrollTop = logEl.scrollHeight;
 }
 
