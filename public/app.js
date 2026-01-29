@@ -1,6 +1,10 @@
 // GitHub Pages => chemins relatifs + backend externe (Koyeb)
+// Audio: PCM16 mono @ 16000 Hz (streaming temps réel via WebAudio)
+
 const BACKEND = "https://mobile-avivah-sicho-96db3843.koyeb.app";
 const WS_URL = BACKEND.replace(/^http/, 'ws') + '/ws';
+
+const TARGET_SR = 16000;
 
 const el = (id) => document.getElementById(id);
 const logEl = el('log');
@@ -19,13 +23,22 @@ backendUrlEl.textContent = BACKEND;
 wsUrlEl.textContent = WS_URL;
 
 let ws = null;
-let stream = null;
-let recorder = null;
-let mimeType = pickMimeType();
-let playQueue = Promise.resolve();
+
+// Audio capture
+let mediaStream = null;
+let audioCtx = null;
+let micSource = null;
+let processor = null;
+let sending = false;
+
+// Audio playback queue (remote)
+let playCtx = null;
+let nextPlayTime = 0;
+let remoteTalking = false;
 
 function log(...args) {
-  logEl.textContent += args.join(' ') + '\n';
+  logEl.textContent += args.join(' ') + '
+';
   logEl.scrollTop = logEl.scrollHeight;
 }
 
@@ -33,44 +46,9 @@ function setStatus(s) {
   statusEl.textContent = s;
 }
 
-function pickMimeType() {
-  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
-  if (!('MediaRecorder' in window)) return '';
-  for (const m of candidates) {
-    if (MediaRecorder.isTypeSupported(m)) return m;
-  }
-  return '';
-}
-
-async function ensureMic() {
-  if (stream) return stream;
-  stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  return stream;
-}
-
 function wsSendJson(obj) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify(obj));
-}
-
-function enqueuePlay(arrayBuffer) {
-  const blob = new Blob([arrayBuffer], { type: mimeType || 'audio/webm' });
-  const url = URL.createObjectURL(blob);
-  playQueue = playQueue.then(
-    () =>
-      new Promise((resolve) => {
-        const a = new Audio(url);
-        a.onended = () => {
-          URL.revokeObjectURL(url);
-          resolve();
-        };
-        a.onerror = () => {
-          URL.revokeObjectURL(url);
-          resolve();
-        };
-        a.play().catch(() => resolve());
-      })
-  );
 }
 
 async function refreshBackendStatus() {
@@ -88,6 +66,98 @@ async function refreshBackendStatus() {
       backendStatusEl.textContent = 'unreachable';
     }
   }
+}
+
+async function ensurePlayContext() {
+  if (!playCtx) playCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (playCtx.state !== 'running') await playCtx.resume();
+  return playCtx;
+}
+
+async function ensureCaptureContext() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state !== 'running') await audioCtx.resume();
+  return audioCtx;
+}
+
+function downsampleToInt16(float32, inSampleRate, outSampleRate) {
+  const ratio = inSampleRate / outSampleRate;
+  const newLen = Math.floor(float32.length / ratio);
+  const out = new Int16Array(newLen);
+
+  let offset = 0;
+  for (let i = 0; i < newLen; i++) {
+    const nextOffset = Math.floor((i + 1) * ratio);
+    let sum = 0;
+    let count = 0;
+    for (let j = offset; j < nextOffset && j < float32.length; j++) {
+      sum += float32[j];
+      count++;
+    }
+    offset = nextOffset;
+    let s = count ? (sum / count) : 0;
+    s = Math.max(-1, Math.min(1, s));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+
+  return out;
+}
+
+async function startCaptureAndSend() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (sending) return;
+
+  await ensureCaptureContext();
+
+  if (!mediaStream) mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  if (!micSource) micSource = audioCtx.createMediaStreamSource(mediaStream);
+
+  const bufferSize = 2048;
+  processor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+
+  processor.onaudioprocess = (e) => {
+    if (!sending || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+    const input = e.inputBuffer.getChannelData(0);
+    const pcm16 = downsampleToInt16(input, audioCtx.sampleRate, TARGET_SR);
+    if (pcm16.length === 0) return;
+
+    ws.send(pcm16.buffer);
+  };
+
+  micSource.connect(processor);
+  processor.connect(audioCtx.destination);
+
+  sending = true;
+}
+
+function stopCaptureAndSend() {
+  sending = false;
+  if (processor) {
+    try { processor.disconnect(); } catch {}
+    processor.onaudioprocess = null;
+    processor = null;
+  }
+}
+
+async function schedulePcmPlayback(arrayBuffer) {
+  const ctx = await ensurePlayContext();
+  const int16 = new Int16Array(arrayBuffer);
+  if (int16.length === 0) return;
+
+  const float32 = new Float32Array(int16.length);
+  for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 0x8000;
+
+  const audioBuffer = ctx.createBuffer(1, float32.length, TARGET_SR);
+  audioBuffer.getChannelData(0).set(float32);
+
+  const src = ctx.createBufferSource();
+  src.buffer = audioBuffer;
+  src.connect(ctx.destination);
+
+  const startAt = Math.max(ctx.currentTime + 0.05, nextPlayTime || 0);
+  src.start(startAt);
+  nextPlayTime = startAt + audioBuffer.duration;
 }
 
 function connect() {
@@ -108,7 +178,7 @@ function connect() {
     wsSendJson({ type: 'join', channel, role: 'pwa' });
 
     await refreshBackendStatus();
-    log('WS open, joined channel', channel, 'mime:', mimeType || 'default');
+    log('WS open, joined channel', channel);
   };
 
   ws.onmessage = (evt) => {
@@ -116,11 +186,20 @@ function connect() {
       try {
         const msg = JSON.parse(evt.data);
         if (msg.type === 'joined') log('Joined OK:', msg.channel);
-        if (msg.type === 'ptt') remotePttEl.textContent = msg.state || 'unknown';
+
+        if (msg.type === 'ptt') {
+          remotePttEl.textContent = msg.state || 'unknown';
+          if (msg.state === 'start') {
+            remoteTalking = true;
+            nextPlayTime = 0;
+          }
+          if (msg.state === 'stop') remoteTalking = false;
+        }
       } catch {}
       return;
     }
-    enqueuePlay(evt.data);
+
+    if (remoteTalking) schedulePcmPlayback(evt.data).catch(() => {});
   };
 
   ws.onclose = () => {
@@ -129,6 +208,8 @@ function connect() {
     disconnectBtn.disabled = true;
     pttBtn.disabled = true;
     remotePttEl.textContent = 'idle';
+    remoteTalking = false;
+    nextPlayTime = 0;
     log('WS closed');
   };
 
@@ -136,35 +217,38 @@ function connect() {
 }
 
 function disconnect() {
+  stopCaptureAndSend();
   if (ws) ws.close();
   ws = null;
 }
 
 async function startPtt() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  const s = await ensureMic();
 
-  wsSendJson({ type: 'ptt', state: 'start' });
+  await ensurePlayContext();
+  await ensureCaptureContext();
 
-  recorder = new MediaRecorder(s, mimeType ? { mimeType } : undefined);
-  recorder.ondataavailable = async (e) => {
-    if (!e.data || e.data.size === 0) return;
-    const buf = await e.data.arrayBuffer();
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(buf);
-  };
-  recorder.start(250);
+  wsSendJson({
+    type: 'ptt',
+    state: 'start',
+    format: { encoding: 'pcm_s16le', sampleRate: TARGET_SR, channels: 1 }
+  });
+
+  await startCaptureAndSend();
   pttBtn.textContent = 'PARLE… (relâche pour stopper)';
 }
 
 function stopPtt() {
   wsSendJson({ type: 'ptt', state: 'stop' });
-  if (recorder && recorder.state !== 'inactive') recorder.stop();
-  recorder = null;
+  stopCaptureAndSend();
   pttBtn.textContent = 'Maintiens pour parler (PTT)';
 }
 
 connectBtn.addEventListener('click', connect);
 disconnectBtn.addEventListener('click', disconnect);
+
+pttBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+pttBtn.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
 
 pttBtn.addEventListener('pointerdown', (e) => {
   e.preventDefault();

@@ -1,8 +1,9 @@
-const CACHE = 'sicho-radio-ghpages-pwa-v1';
+const CACHE = 'sicho-radio-ghpages-pcm-v1';
 
 self.addEventListener('install', (e) => {
   const scope = self.registration.scope;
-  const assets = ['./', './index.html', './app.js', './manifest.webmanifest'].map((p) => new URL(p, scope));
+  const assets = ['./', './index.html', './app.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png']
+    .map((p) => new URL(p, scope));
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(assets)));
   self.skipWaiting();
 });
